@@ -3,7 +3,8 @@
     "allow": [
       "Bash(pip install:*)",
       "Bash(sqlite3:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Read(//c/Users/bobta/.claude/**)"
     ],
     "deny": [],
     "ask": []
