@@ -49,10 +49,10 @@ class SetupMode:
         """Perform initial database setup with all historical data."""
         logger.info("Starting initial database setup")
 
-        # Get all active symbols
-        print("Fetching active stock symbols...")
-        symbols = self.polygon.get_all_active_symbols()
-        logger.info(f"Found {len(symbols)} active symbols")
+        # Get filtered active symbols that meet data universe requirements
+        print("Fetching active stock symbols with data universe filters...")
+        symbols = self.polygon.get_filtered_active_symbols()
+        logger.info(f"Found {len(symbols)} symbols that pass data universe filters")
 
         if not symbols:
             raise ValueError("No active symbols found")
@@ -154,10 +154,27 @@ class SetupMode:
         """Backfill missing data for recent days."""
         logger.info("Starting data backfill")
 
-        # Get all symbols from database
-        symbols = self.db.get_all_symbols()
-        if not symbols:
+        # Get all symbols from database (these should already be filtered from initial setup)
+        # But also validate they still pass filters
+        db_symbols = self.db.get_all_symbols()
+        if not db_symbols:
             logger.warning("No symbols in database for backfill")
+            return
+
+        # Validate that existing symbols still pass data universe filters
+        print("Validating existing symbols against current data universe filters...")
+        symbols = []
+        for symbol in db_symbols:
+            if self.polygon.passes_data_universe_filters(symbol):
+                symbols.append(symbol)
+            else:
+                logger.info(f"Removing {symbol} from tracking - no longer passes data universe filters")
+
+        if len(symbols) != len(db_symbols):
+            logger.info(f"Filtered out {len(db_symbols) - len(symbols)} symbols during backfill validation")
+
+        if not symbols:
+            logger.warning("No symbols pass current data universe filters")
             return
 
         # Determine date range to backfill

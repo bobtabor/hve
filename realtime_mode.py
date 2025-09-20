@@ -93,10 +93,32 @@ class RealtimeMode:
         """Perform volume check and identify new highest volume records."""
         try:
             # Get all symbols from database
-            symbols = self.db.get_all_symbols()
-            if not symbols:
+            all_symbols = self.db.get_all_symbols()
+            if not all_symbols:
                 logger.warning("No symbols in database for volume check")
                 return
+
+            # Validate symbols still pass data universe filters (check periodically)
+            # To avoid overhead, we'll check filters every 10th check (roughly every 5 hours)
+            if hasattr(self, '_check_count'):
+                self._check_count += 1
+            else:
+                self._check_count = 1
+
+            if self._check_count % 10 == 0:
+                print(f"🔍 Validating {len(all_symbols)} symbols against data universe filters...")
+                valid_symbols = []
+                for symbol in all_symbols:
+                    if self.polygon.passes_data_universe_filters(symbol):
+                        valid_symbols.append(symbol)
+                    else:
+                        logger.info(f"Symbol {symbol} no longer passes data universe filters")
+
+                symbols = valid_symbols
+                if len(symbols) != len(all_symbols):
+                    print(f"📊 {len(all_symbols) - len(symbols)} symbols filtered out due to changed conditions")
+            else:
+                symbols = all_symbols
 
             print(f"📋 Checking {len(symbols)} symbols...")
 

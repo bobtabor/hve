@@ -313,3 +313,93 @@ class PolygonClient:
         except Exception as e:
             logger.error(f"Error getting current volumes: {e}")
             return {}
+
+    def calculate_10_sma(self, historical_data: List[Dict[str, Any]], field: str) -> float:
+        """Calculate 10-day Simple Moving Average for a given field."""
+        if len(historical_data) < 10:
+            return 0.0
+
+        # Use the most recent 10 data points
+        recent_data = historical_data[-10:]
+        values = [bar.get(field, 0) for bar in recent_data]
+
+        # Filter out zero values
+        valid_values = [v for v in values if v > 0]
+        if len(valid_values) < 10:
+            return 0.0
+
+        return sum(valid_values) / len(valid_values)
+
+    def passes_data_universe_filters(self, symbol: str, historical_data: List[Dict[str, Any]] = None) -> bool:
+        """Check if a symbol passes the data universe filtering requirements.
+
+        Requirements:
+        1. 10-SMA volume × 10-SMA price > $10,000,000
+        2. Current price >= $3.00
+        """
+        try:
+            # Get recent historical data if not provided
+            if historical_data is None:
+                end_date = date.today()
+                start_date = end_date - timedelta(days=20)  # Get extra days to ensure we have 10 trading days
+                historical_data = self.get_daily_aggregates(symbol, start_date, end_date)
+
+            if not historical_data or len(historical_data) < 10:
+                logger.debug(f"Insufficient data for {symbol} (need 10 days, got {len(historical_data) if historical_data else 0})")
+                return False
+
+            # Get the most recent price (closing price from latest bar)
+            latest_bar = historical_data[-1]
+            current_price = latest_bar.get('c', 0)  # 'c' is closing price
+
+            # Filter 1: Current price >= $3.00
+            if current_price < 3.00:
+                logger.debug(f"{symbol} filtered out: price ${current_price:.2f} < $3.00")
+                return False
+
+            # Calculate 10-SMA volume and 10-SMA price
+            sma_volume = self.calculate_10_sma(historical_data, 'v')  # 'v' is volume
+            sma_price = self.calculate_10_sma(historical_data, 'c')   # 'c' is closing price
+
+            if sma_volume == 0 or sma_price == 0:
+                logger.debug(f"{symbol} filtered out: invalid SMA values (volume: {sma_volume}, price: {sma_price})")
+                return False
+
+            # Filter 2: 10-SMA volume × 10-SMA price > $10,000,000
+            dollar_volume = sma_volume * sma_price
+            if dollar_volume <= 10_000_000:
+                logger.debug(f"{symbol} filtered out: 10-SMA dollar volume ${dollar_volume:,.0f} <= $10,000,000")
+                return False
+
+            logger.debug(f"{symbol} passes filters: price=${current_price:.2f}, 10-SMA dollar volume=${dollar_volume:,.0f}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error checking filters for {symbol}: {e}")
+            return False
+
+    def get_filtered_active_symbols(self) -> List[str]:
+        """Get all active common stock symbols that pass data universe filters."""
+        logger.info("Fetching active symbols with data universe filters...")
+
+        # First get all active symbols
+        all_symbols = self.get_all_active_symbols()
+        logger.info(f"Found {len(all_symbols)} total active symbols")
+
+        # Filter symbols in parallel
+        filtered_symbols = []
+
+        def check_symbol_filters(symbol: str) -> Optional[str]:
+            """Check if a symbol passes filters."""
+            if self.passes_data_universe_filters(symbol):
+                return symbol
+            return None
+
+        logger.info("Applying data universe filters...")
+        results = self.process_symbols_parallel(all_symbols, check_symbol_filters, chunk_size=50)
+        filtered_symbols = [symbol for symbol in results if symbol is not None]
+
+        logger.info(f"After filtering: {len(filtered_symbols)} symbols pass data universe requirements")
+        logger.info(f"Filtered out: {len(all_symbols) - len(filtered_symbols)} symbols")
+
+        return sorted(filtered_symbols)
