@@ -2,7 +2,7 @@
 
 Important: please abide by my ~/.claude/CLAUDE.md file for my standard setup instructions.
 
-I want to create a new Python project called "hve". The acronym stands for "highest volume ever". In "setup mode", the project creates or updates a SQLite database with a row for each stock symbol in the data universe that includes the date and volume for the highest volume ever experienced for that stock, as well as the highest volume within the past year (365 days). In "realtime mode", the project monitors volume every 30 minutes to see if current volume for today exceeds either the "highest volume ever" or "highest volume in a year", comparing the values in the database. In "historical mode", the project will identify any stock symbols that have experienced either type of highest volume event on or after a date that is passed in as an argument.
+I want to create a new Python project called "hve". The acronym stands for "highest volume ever". In "setup mode", the project creates or updates a SQLite database with a row for each stock symbol in the data universe that includes the date and volume for the highest volume ever experienced for that stock. In "realtime mode", the project monitors volume every 30 minutes to see if current volume for today exceeds the "highest volume ever", comparing the values in the database. In "historical mode", the project will identify any stock symbols that have experienced highest volume ever events on or after a date that is passed in as an argument.
 
 ## Setup Mode
 
@@ -15,7 +15,7 @@ The logic of the application should always check these two conditions and not co
 
 ** "Stale" data means that the data from yesterday or earlier has not updated new "highest volume ever" events in the database for stock symbols. So, if I have not run the application for several days, the application should go back to the last known "run", and should query Polygon.io for the missing days, and if there are new "highest volume ever" events, it should update the date and volume for the given stock symbol.
 
-If the SQLite database does not exist yet, the logic should create a database and table, and the instructions in the `Data universe` section, below, to identify the "highest volume ever", and record it. Since this could take a very long time, send an email notification when this long running operation is complete.
+If the SQLite database does not exist yet, the logic should create a database and table, and use the instructions in the `Data universe` section, below, to identify the "highest volume ever", and record it. Since this could take a very long time, send an email notification when this long running operation is complete.
 
 Setup mode runs regardless of market hours to ensure the database is always current when needed.
 
@@ -74,22 +74,22 @@ When working in "historical mode", you merely need the SQLite database since you
 
 ## Email
 
-In "realtime mode", the application will identify stocks where the current volume for the current day is greater than either the previous "highest volume ever" or "highest volume in a year" values stored in the database. Each "hit" should be added to a list, then sent via an email, one email for each 30-minutes. Use the following to send an email:
+In "realtime mode", the application will identify stocks where the current volume for the current day is greater than the previous "highest volume ever" value stored in the database. Each "hit" should be added to a list, then sent via an email, one email for each 30-minutes. Use the following to send an email:
 
 Subject line: Highest volume ever - 1:30 PM
 
 (Use the correct time of day, formatted like my example, above)
 
-Body: Create a table with the symbol, event type ("Ever" or "Year"), the old highest volume date and volume, today's volume, and today's gain / loss percentage.
+Body: Create a table with the symbol, the old highest volume date and volume, today's volume, and today's gain / loss percentage.
 
 
-In "historical mode", the application will identify stocks that experienced either a "highest volume ever" or "highest volume in a year" event since the date passed in as a command line argument. Use the following to send an email:
+In "historical mode", the application will identify stocks that experienced a "highest volume ever" event since the date passed in as a command line argument. Use the following to send an email:
 
-Subject line: Highest volume events - Since 9/16/2025
+Subject line: Highest volume ever events - Since 9/16/2025
 
-(Use the correct time of day, formatted like my example, above)
+(Use the correct date, formatted like my example, above)
 
-Body: Create a table with the symbol, event type ("Ever", "Year", or "Ever, Year" for combined events), the highest volume date and volume. Sort by date descending, then symbol ascending. Combine multiple event types for the same symbol into a single row.
+Body: Create a table with the symbol, the highest volume date and volume. Sort by date descending, then symbol ascending.
 
 
 
@@ -130,29 +130,5 @@ Answer: I don't care which approach you take as long as it is accurate. I'll lea
 
 ## File Output
 
-In "historical mode", in addition to console output and email notifications, create separate .txt files per day and event type in the date range. Name the files using the format YYYY-MM-DD-ever.txt and YYYY-MM-DD-year.txt (e.g., 2025-09-16-ever.txt, 2025-09-16-year.txt) so files sort correctly in the filesystem. Write the symbols to each file, one per row, sorted alphabetically. Overwrite the files if they already exist.
+In "historical mode", in addition to console output and email notifications, create separate .txt files per day in the date range. Name the files using the format YYYY-MM-DD-ever.txt (e.g., 2025-09-16-ever.txt) so files sort correctly in the filesystem. Write the symbols to each file, one per row, sorted alphabetically. Overwrite the files if they already exist.
 
-## Highest Volume in Year Feature
-
-The application tracks two types of volume records:
-
-1. **Highest Volume Ever**: All-time highest volume for each stock (existing functionality)
-2. **Highest Volume in Year**: Highest volume within the past 365 days (new functionality)
-
-### Database Schema
-
-The SQLite table includes additional columns:
-- `highest_volume_year`: Volume amount for highest in past year
-- `highest_volume_year_date`: Date when that volume occurred
-
-### Update Logic
-
-During daily processing, for each symbol:
-1. Check if today's volume exceeds current "highest volume in a year"
-2. Check if current "highest volume in a year" date is > 365 days old
-3. If either condition is true, recalculate the year record from available historical data
-4. Track both "Ever" and "Year" events separately for reporting
-
-### Year Record Calculation
-
-"Highest volume in year" uses a 365-day rolling window from the current date. When a year record becomes older than 365 days, the system automatically recalculates by finding the highest volume within the past 365 days from available historical data.

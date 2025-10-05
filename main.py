@@ -12,7 +12,7 @@ import sys
 import os
 import argparse
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, time
 from typing import Optional
 
 from database import Database
@@ -109,6 +109,15 @@ def main():
         if args.mode == 'realtime':
             # Check market status for realtime mode
             if not market_checker.should_run_during_market_hours():
+                logger.info("Market is closed or after hours - checking for last market day report")
+
+                # Determine if we should send a last market day report
+                should_send_report = _should_send_last_market_day_report(market_checker)
+
+                if should_send_report:
+                    logger.info("Sending last market day report")
+                    _send_last_market_day_report(db, email_service, market_checker)
+
                 logger.info("Market is closed or after hours - exiting realtime mode")
                 print("📈 Market is currently closed. Realtime mode can only run during market hours.")
                 return
@@ -138,6 +147,63 @@ def main():
         except:
             pass  # Don't fail on email notification errors
         sys.exit(1)
+
+
+def _should_send_last_market_day_report(market_checker: MarketStatusChecker) -> bool:
+    """
+    Determine if we should send a last market day report.
+
+    Send report when:
+    - Running on weekends
+    - Running after market hours on weekdays
+    - But NOT when running before market open on weekdays
+    """
+    try:
+        import pytz
+        current_time = datetime.now(pytz.timezone('US/Central'))
+        current_time_only = current_time.time()
+
+        # If it's weekend, always send report
+        if current_time.weekday() >= 5:  # Saturday=5, Sunday=6
+            return True
+
+        # If it's a weekday, check if we're after market hours but not before market open
+        market_open_cst = time(8, 30)  # 9:30 AM EST = 8:30 AM CST
+
+        # If before market open, don't send report (wait for market open)
+        if current_time_only < market_open_cst:
+            return False
+
+        # If after market open time but market checker says we shouldn't run
+        # (meaning market is closed/after hours), then send report
+        return not market_checker.should_run_during_market_hours()
+
+    except Exception as e:
+        logger.error(f"Error determining if should send last market day report: {e}")
+        # Default to not sending report if we can't determine
+        return False
+
+
+def _send_last_market_day_report(db: Database, email_service: EmailService, market_checker: MarketStatusChecker):
+    """Send email report for the last complete market day."""
+    try:
+        # Get the last complete market day
+        last_market_day = market_checker.get_last_complete_market_day()
+        logger.info(f"Getting HVE events for last market day: {last_market_day}")
+
+        # Get events for that day
+        events = db.get_events_for_date(last_market_day)
+
+        logger.info(f"Found {len(events)} events for {last_market_day}")
+
+        # Send the email report
+        email_service.send_last_market_day_report(events, last_market_day)
+
+        print(f"📧 Sent last market day report for {last_market_day.strftime('%A, %m/%d/%Y')} ({len(events)} events)")
+
+    except Exception as e:
+        logger.error(f"Error sending last market day report: {e}")
+        # Don't raise - we don't want this to crash the application
 
 
 if __name__ == '__main__':

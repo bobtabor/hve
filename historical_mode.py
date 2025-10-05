@@ -60,12 +60,12 @@ class HistoricalMode:
 
         print(f"Found {len(events)} highest volume ever events:\n")
 
-        # Group events by date and type for better display
+        # Group events by date for better display
         events_by_date = {}
         for symbol, event_date, volume, event_type in events:
             if event_date not in events_by_date:
                 events_by_date[event_date] = []
-            events_by_date[event_date].append((symbol, volume, event_type))
+            events_by_date[event_date].append((symbol, volume))
 
         # Display events grouped by date (most recent first)
         sorted_dates = sorted(events_by_date.keys(), reverse=True)
@@ -77,8 +77,8 @@ class HistoricalMode:
             # Sort symbols by volume (highest first)
             date_events = sorted(events_by_date[event_date], key=lambda x: x[1], reverse=True)
 
-            for symbol, volume, event_type in date_events:
-                print(f"  📈 {symbol:<6} ({event_type:<4}) : {volume:>15,} shares")
+            for symbol, volume in date_events:
+                print(f"  📈 {symbol:<6} : {volume:>15,} shares")
 
             print()  # Empty line between dates
 
@@ -98,29 +98,27 @@ class HistoricalMode:
             top_events = sorted(events, key=lambda x: x[2], reverse=True)[:5]
             print(f"\n🏆 Top 5 Highest Volumes:")
             for i, (symbol, event_date, volume, event_type) in enumerate(top_events, 1):
-                print(f"  {i}. {symbol:<6} ({event_type}) : {volume:>15,} on {event_date.strftime('%m/%d/%Y')}")
+                print(f"  {i}. {symbol:<6} : {volume:>15,} on {event_date.strftime('%m/%d/%Y')}")
 
         print("\n" + "=" * 70)
 
     def _create_daily_files(self, events: List[Tuple[str, date, int, str]], since_date: date):
-        """Create daily .txt files with symbols, separate files for Ever and Year events."""
+        """Create daily .txt files with symbols for Ever events."""
         if not events:
             print("📁 No events to write to files")
             return
 
-        # Group events by date and type
-        events_by_date_type = {}
+        # Group events by date
+        events_by_date = {}
         for symbol, event_date, volume, event_type in events:
-            key = (event_date, event_type)
-            if key not in events_by_date_type:
-                events_by_date_type[key] = []
-            events_by_date_type[key].append(symbol)
+            if event_date not in events_by_date:
+                events_by_date[event_date] = []
+            events_by_date[event_date].append(symbol)
 
-        # Create separate files for each date and type
+        # Create separate files for each date
         files_created = 0
-        for (event_date, event_type), symbols in events_by_date_type.items():
-            type_suffix = "ever" if event_type == "Ever" else "year"
-            filename = f"{event_date.strftime('%Y-%m-%d')}-{type_suffix}.txt"
+        for event_date, symbols in events_by_date.items():
+            filename = f"{event_date.strftime('%Y-%m-%d')}-ever.txt"
 
             try:
                 with open(filename, 'w') as f:

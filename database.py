@@ -30,9 +30,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS highest_volume_ever (
                     symbol TEXT PRIMARY KEY,
                     date TEXT NOT NULL,
-                    volume INTEGER NOT NULL,
-                    highest_volume_year INTEGER,
-                    highest_volume_year_date TEXT
+                    volume INTEGER NOT NULL
                 )
             ''')
 
@@ -119,111 +117,50 @@ class Database:
             ''', (update_date.strftime('%Y-%m-%d'), datetime.now().isoformat()))
             conn.commit()
 
-    def insert_or_update_highest_volume(self, symbol: str, volume_date: date, volume: int, historical_data: List = None):
-        """Insert or update highest volume records for a symbol."""
+    def insert_or_update_highest_volume(self, symbol: str, volume_date: date, volume: int):
+        """Insert or update highest volume ever record for a symbol."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
             # Check if we have existing data for this symbol
             cursor.execute(
-                "SELECT date, volume, highest_volume_year, highest_volume_year_date FROM highest_volume_ever WHERE symbol = ?",
+                "SELECT date, volume FROM highest_volume_ever WHERE symbol = ?",
                 (symbol,)
             )
             result = cursor.fetchone()
 
-            ever_updated = False
-            year_updated = False
-
-            existing_ever_date = result[0] if result else None
             existing_ever_volume = result[1] if result else 0
-            existing_year_volume = result[2] if result and result[2] else 0
-            existing_year_date = result[3] if result and result[3] else None
+            ever_updated = False
 
             # Check for new "highest volume ever"
             if volume > existing_ever_volume:
                 ever_updated = True
 
-            # Calculate highest volume in year (365 days)
-            year_ago = volume_date - timedelta(days=365)
-
-            # Get current year volume and date
-            current_year_volume = existing_year_volume
-            current_year_date = existing_year_date
-
-            # Check if existing year record is too old
-            if existing_year_date:
-                existing_date_obj = datetime.strptime(existing_year_date, '%Y-%m-%d').date()
-                if existing_date_obj < year_ago:
-                    # Need to recalculate year record from historical data
-                    if historical_data:
-                        current_year_volume, current_year_date = self._calculate_year_high(historical_data, year_ago, volume_date)
-                    else:
-                        current_year_volume = volume
-                        current_year_date = volume_date.strftime('%Y-%m-%d')
-                    year_updated = True
-
-            # Check if today's volume beats current year record
-            if volume > current_year_volume:
-                current_year_volume = volume
-                current_year_date = volume_date.strftime('%Y-%m-%d')
-                year_updated = True
-
             # Always insert for new symbols, or update if there are changes
-            if ever_updated or year_updated or result is None:
-                # Determine final "ever" values
-                if ever_updated:
-                    final_ever_volume = volume
-                    final_ever_date = volume_date.strftime('%Y-%m-%d')
-                else:
-                    final_ever_volume = existing_ever_volume if result else volume
-                    final_ever_date = existing_ever_date if result else volume_date.strftime('%Y-%m-%d')
-
+            if ever_updated or result is None:
                 try:
                     cursor.execute('''
                         INSERT OR REPLACE INTO highest_volume_ever
-                        (symbol, date, volume, highest_volume_year, highest_volume_year_date)
-                        VALUES (?, ?, ?, ?, ?)
+                        (symbol, date, volume)
+                        VALUES (?, ?, ?)
                     ''', (symbol,
-                          final_ever_date,
-                          final_ever_volume,
-                          current_year_volume,
-                          current_year_date))
+                          volume_date.strftime('%Y-%m-%d'),
+                          volume))
 
                     conn.commit()  # Explicitly commit the transaction
 
                     if ever_updated:
                         logger.debug(f"Updated EVER {symbol}: {volume:,} on {volume_date}")
-                    if year_updated:
-                        logger.debug(f"Updated YEAR {symbol}: {current_year_volume:,} on {current_year_date}")
                     if result is None:
-                        logger.debug(f"Inserted new symbol {symbol}: {final_ever_volume:,} on {final_ever_date}")
+                        logger.debug(f"Inserted new symbol {symbol}: {volume:,} on {volume_date}")
 
                 except Exception as e:
                     logger.error(f"Database insert error for {symbol}: {e}")
                     conn.rollback()
-                    return False, False
+                    return False
 
-            return ever_updated, year_updated
+            return ever_updated
 
-    def _calculate_year_high(self, historical_data: List, start_date: date, end_date: date) -> Tuple[int, str]:
-        """Calculate highest volume in the past year from historical data."""
-        highest_volume = 0
-        highest_date = start_date.strftime('%Y-%m-%d')
-
-        for bar in historical_data:
-            bar_timestamp = bar['t']
-            utc_dt = datetime.fromtimestamp(bar_timestamp / 1000, tz=__import__('pytz').UTC)
-            market_tz = __import__('pytz').timezone('US/Eastern')
-            market_dt = utc_dt.astimezone(market_tz)
-            bar_date = market_dt.date()
-
-            if start_date <= bar_date <= end_date:
-                volume = bar.get('v', 0)
-                if volume > highest_volume:
-                    highest_volume = volume
-                    highest_date = bar_date.strftime('%Y-%m-%d')
-
-        return highest_volume, highest_date
 
     def get_highest_volume(self, symbol: str) -> Optional[Tuple[date, int]]:
         """Get highest volume ever record for a symbol."""
@@ -241,21 +178,6 @@ class Database:
 
             return None
 
-    def get_highest_volume_year(self, symbol: str) -> Optional[Tuple[date, int]]:
-        """Get highest volume in year record for a symbol."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT highest_volume_year_date, highest_volume_year FROM highest_volume_ever WHERE symbol = ?",
-                (symbol,)
-            )
-            result = cursor.fetchone()
-
-            if result and result[0] and result[1]:
-                volume_date = datetime.strptime(result[0], '%Y-%m-%d').date()
-                return volume_date, result[1]
-
-            return None
 
     def get_all_symbols(self) -> List[str]:
         """Get all symbols in the database."""
@@ -265,11 +187,11 @@ class Database:
             return [row[0] for row in cursor.fetchall()]
 
     def get_events_since_date(self, since_date: date) -> List[Tuple[str, date, int, str]]:
-        """Get all highest volume events since a specific date."""
+        """Get all highest volume ever events since a specific date."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # Get "Ever" events
+            # Get "Ever" events only
             cursor.execute('''
                 SELECT symbol, date, volume
                 FROM highest_volume_ever
@@ -284,22 +206,30 @@ class Database:
                 volume = row[2]
                 results.append((symbol, volume_date, volume, "Ever"))
 
-            # Get "Year" events
+            return results
+
+    def get_events_for_date(self, target_date: date) -> List[Tuple[str, date, int, str]]:
+        """Get all highest volume ever events for a specific date."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            target_date_str = target_date.strftime('%Y-%m-%d')
+
+            results = []
+
+            # Get "Ever" events for this date only
             cursor.execute('''
-                SELECT symbol, highest_volume_year_date, highest_volume_year
+                SELECT symbol, date, volume
                 FROM highest_volume_ever
-                WHERE highest_volume_year_date >= ? AND highest_volume_year IS NOT NULL
-                ORDER BY highest_volume_year_date DESC, highest_volume_year DESC
-            ''', (since_date.strftime('%Y-%m-%d'),))
+                WHERE date = ?
+                ORDER BY volume DESC
+            ''', (target_date_str,))
 
             for row in cursor.fetchall():
                 symbol = row[0]
                 volume_date = datetime.strptime(row[1], '%Y-%m-%d').date()
                 volume = row[2]
-                results.append((symbol, volume_date, volume, "Year"))
+                results.append((symbol, volume_date, volume, "Ever"))
 
-            # Sort all results by date DESC, then volume DESC
-            results.sort(key=lambda x: (x[1], x[2]), reverse=True)
             return results
 
     def get_database_stats(self) -> dict:
@@ -324,7 +254,7 @@ class Database:
             }
 
     def batch_insert_highest_volumes(self, records: List[Tuple[str, date, int]]):
-        """Batch insert multiple highest volume records."""
+        """Batch insert multiple highest volume ever records."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
 

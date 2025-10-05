@@ -72,10 +72,10 @@ class SetupMode:
             try:
                 batch_results = self._process_symbol_batch(batch_symbols)
 
-                # Store results in database (for initial setup, we'll process individually to handle year logic)
+                # Store results in database
                 if batch_results:
                     for symbol, (highest_date, highest_volume, historical_data) in batch_results.items():
-                        self.db.insert_or_update_highest_volume(symbol, highest_date, highest_volume, historical_data)
+                        self.db.insert_or_update_highest_volume(symbol, highest_date, highest_volume)
 
                 total_processed += len(batch_symbols)
                 progress_bar.update(len(batch_symbols))
@@ -212,14 +212,11 @@ class SetupMode:
                     market_dt = utc_dt.astimezone(market_tz)
                     bar_date = market_dt.date()
 
-                    # Check if this is a new highest volume (ever or year)
-                    ever_updated, year_updated = self.db.insert_or_update_highest_volume(symbol, bar_date, volume, daily_data)
-                    if ever_updated or year_updated:
+                    # Check if this is a new highest volume ever
+                    ever_updated = self.db.insert_or_update_highest_volume(symbol, bar_date, volume)
+                    if ever_updated:
                         updates_made += 1
-                        if ever_updated:
-                            logger.info(f"New highest volume EVER for {symbol}: {volume:,} on {bar_date}")
-                        if year_updated:
-                            logger.info(f"New highest volume YEAR for {symbol}: {volume:,} on {bar_date}")
+                        logger.info(f"New highest volume EVER for {symbol}: {volume:,} on {bar_date}")
 
             except Exception as e:
                 logger.error(f"Error backfilling {symbol}: {e}")

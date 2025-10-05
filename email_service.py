@@ -140,7 +140,7 @@ class EmailService:
             logger.error(f"Failed to send email: {e}")
             raise
 
-    def send_realtime_notification(self, hits: List[Tuple[str, date, int, int, float, str]], timestamp: datetime):
+    def send_realtime_notification(self, hits: List[Tuple[str, date, int, int, float]], timestamp: datetime):
         """Send realtime mode notification email."""
         time_str = timestamp.strftime('%I:%M %p')
         subject = f"Highest volume ever - {time_str}"
@@ -156,16 +156,15 @@ class EmailService:
         </head>
         <body>
         <div class="container">
-            <h2>🚀 Highest Volume Alert</h2>
+            <h2>🚀 Highest Volume Ever Alert</h2>
             <p class="timestamp">Generated at {timestamp.strftime('%Y-%m-%d %I:%M %p %Z')}</p>
 
-            <p>The following stocks have achieved new highest volume records:</p>
+            <p>The following stocks have achieved new highest volume ever records:</p>
 
             <table>
                 <thead>
                     <tr>
                         <th>Symbol</th>
-                        <th>Type</th>
                         <th>Previous Highest Volume Date</th>
                         <th>Previous Highest Volume</th>
                         <th>Today's Volume</th>
@@ -175,11 +174,10 @@ class EmailService:
                 <tbody>
         """
 
-        for symbol, prev_date, prev_volume, today_volume, gain_loss_pct, event_type in hits:
+        for symbol, prev_date, prev_volume, today_volume, gain_loss_pct in hits:
             html_body += f"""
                     <tr>
                         <td class="symbol">{symbol}</td>
-                        <td><strong>{event_type}</strong></td>
                         <td>{prev_date.strftime('%Y-%m-%d')}</td>
                         <td class="volume">{self._format_volume(prev_volume)}</td>
                         <td class="volume">{self._format_volume(today_volume)}</td>
@@ -205,7 +203,7 @@ class EmailService:
     def send_historical_notification(self, events: List[Tuple[str, date, int, str]], since_date: date):
         """Send historical mode notification email."""
         date_str = since_date.strftime('%m/%d/%Y')
-        subject = f"Highest volume events - Since {date_str}"
+        subject = f"Highest volume ever events - Since {date_str}"
 
         html_body = f"""
         <!DOCTYPE html>
@@ -215,25 +213,24 @@ class EmailService:
         </head>
         <body>
         <div class="container">
-            <h2>📊 Historical Highest Volume Report</h2>
+            <h2>📊 Historical Highest Volume Ever Report</h2>
             <p class="timestamp">Generated at {datetime.now().strftime('%Y-%m-%d %I:%M %p %Z')}</p>
 
-            <p>Stocks that achieved highest volume records since <strong>{date_str}</strong>:</p>
+            <p>Stocks that achieved highest volume ever records since <strong>{date_str}</strong>:</p>
         """
 
         if not events:
             html_body += """
-            <p><em>No highest volume events found for the specified period.</em></p>
+            <p><em>No highest volume ever events found for the specified period.</em></p>
             """
         else:
             html_body += f"""
-            <p>Found <strong>{len(events)}</strong> highest volume events:</p>
+            <p>Found <strong>{len(events)}</strong> highest volume ever events:</p>
 
             <table>
                 <thead>
                     <tr>
                         <th>Symbol</th>
-                        <th>Type</th>
                         <th>Highest Volume Date</th>
                         <th>Volume</th>
                     </tr>
@@ -241,28 +238,15 @@ class EmailService:
                 <tbody>
             """
 
-            # Group events by symbol to combine types
-            symbol_events = {}
-            for symbol, event_date, volume, event_type in events:
-                if symbol not in symbol_events:
-                    symbol_events[symbol] = {'types': [], 'date': event_date, 'volume': volume}
-                symbol_events[symbol]['types'].append(event_type)
-                # Use the highest volume if multiple events for same symbol
-                if volume > symbol_events[symbol]['volume']:
-                    symbol_events[symbol]['volume'] = volume
-                    symbol_events[symbol]['date'] = event_date
-
             # Sort by date descending, then symbol ascending
-            sorted_symbols = sorted(symbol_events.items(), key=lambda x: (-x[1]['date'].toordinal(), x[0]))
+            sorted_events = sorted(events, key=lambda x: (-x[1].toordinal(), x[0]))
 
-            for symbol, data in sorted_symbols:
-                types_str = ', '.join(sorted(data['types']))
+            for symbol, event_date, volume, event_type in sorted_events:
                 html_body += f"""
                         <tr>
                             <td class="symbol">{symbol}</td>
-                            <td><strong>{types_str}</strong></td>
-                            <td>{data['date'].strftime('%Y-%m-%d')}</td>
-                            <td class="volume">{self._format_volume(data['volume'])}</td>
+                            <td>{event_date.strftime('%Y-%m-%d')}</td>
+                            <td class="volume">{self._format_volume(volume)}</td>
                         </tr>
                 """
 
@@ -321,6 +305,72 @@ class EmailService:
             <div class="footer">
                 HVE (Highest Volume Ever) Monitoring System<br>
                 Powered by Polygon.io
+            </div>
+        </div>
+        </body>
+        </html>
+        """
+
+        self._send_email(subject, html_body)
+
+    def send_last_market_day_report(self, events: List[Tuple[str, date, int, str]], market_date: date):
+        """Send last complete market day HVE report email."""
+        date_str = market_date.strftime('%m/%d/%Y')
+        day_name = market_date.strftime('%A')
+        subject = f"Last Market Day Report - {day_name} {date_str}"
+
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        {self._get_email_style()}
+        </head>
+        <body>
+        <div class="container">
+            <h2>📊 Last Market Day HVE Report</h2>
+            <p class="timestamp">Generated at {datetime.now().strftime('%Y-%m-%d %I:%M %p %Z')}</p>
+
+            <p>Highest volume ever events for the last complete market day: <strong>{day_name}, {date_str}</strong></p>
+        """
+
+        if not events:
+            html_body += """
+            <p><em>No highest volume ever events occurred on the last complete market day.</em></p>
+            """
+        else:
+            html_body += f"""
+            <p>Found <strong>{len(events)}</strong> highest volume ever events:</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Volume</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
+
+            # Sort by symbol alphabetically
+            sorted_events = sorted(events, key=lambda x: x[0])
+
+            for symbol, event_date, volume, event_type in sorted_events:
+                html_body += f"""
+                        <tr>
+                            <td class="symbol">{symbol}</td>
+                            <td class="volume">{self._format_volume(volume)}</td>
+                        </tr>
+                """
+
+            html_body += """
+                </tbody>
+            </table>
+            """
+
+        html_body += """
+            <div class="footer">
+                HVE (Highest Volume Ever) Monitoring System<br>
+                Last Market Day Report - Powered by Polygon.io
             </div>
         </div>
         </body>

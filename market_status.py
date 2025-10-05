@@ -4,7 +4,7 @@ Handles market hours validation and timezone conversion.
 """
 
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, date, timedelta
 from typing import Dict, Any
 import pytz
 
@@ -143,6 +143,78 @@ class MarketStatusChecker:
             logger.error(f"Error checking market hours: {e}")
             # If we can't determine status, be conservative and don't run
             return False
+
+    def get_last_complete_market_day(self) -> date:
+        """
+        Get the date of the last complete market day.
+
+        If today before market open: yesterday (if weekday) or last Friday
+        If today during/after market: today (if weekday) or last Friday
+        If weekend: last Friday
+        """
+        try:
+            current_time = datetime.now(self.cst_tz)
+            current_date = current_time.date()
+            current_time_only = current_time.time()
+
+            # Market open time: 9:30 AM EST = 8:30 AM CST
+            market_open_cst = time(8, 30)
+
+            # If it's weekend (Saturday=5, Sunday=6), return last Friday
+            if current_date.weekday() >= 5:
+                days_back = current_date.weekday() - 4  # Friday = 4
+                return current_date - timedelta(days=days_back)
+
+            # If it's a weekday
+            if current_date.weekday() < 5:
+                # Check if market is open today
+                if self.is_market_open():
+                    # Market is open today
+                    effective_close = self.get_effective_close_time_cst()
+                    if current_time_only >= effective_close:
+                        # After market close, today is complete
+                        return current_date
+                    else:
+                        # During market hours, yesterday is last complete day
+                        return self._get_previous_business_day(current_date)
+                else:
+                    # Market is closed today
+                    if current_time_only < market_open_cst:
+                        # Before market open, yesterday is last complete day
+                        return self._get_previous_business_day(current_date)
+                    else:
+                        # After market hours but market didn't open (holiday), today might be complete
+                        # Check if today was a trading day by looking at upcoming market status
+                        if self._is_trading_day(current_date):
+                            return current_date
+                        else:
+                            return self._get_previous_business_day(current_date)
+
+            # Fallback: return previous business day
+            return self._get_previous_business_day(current_date)
+
+        except Exception as e:
+            logger.error(f"Error determining last complete market day: {e}")
+            # Fallback: return previous business day
+            return self._get_previous_business_day(datetime.now(self.cst_tz).date())
+
+    def _get_previous_business_day(self, from_date: date) -> date:
+        """Get the previous business day (Monday-Friday) from a given date."""
+        current = from_date - timedelta(days=1)
+        while current.weekday() >= 5:  # Skip weekends
+            current = current - timedelta(days=1)
+        return current
+
+    def _is_trading_day(self, check_date: date) -> bool:
+        """Check if a given date was a trading day (not a holiday)."""
+        try:
+            # This is a simplified check - in a full implementation, you'd check
+            # against the market calendar API for holidays
+            # For now, assume weekdays are trading days unless it's a major holiday
+            return check_date.weekday() < 5
+        except Exception as e:
+            logger.error(f"Error checking if {check_date} is trading day: {e}")
+            return check_date.weekday() < 5
 
     def get_status_summary(self) -> str:
         """Get a human-readable status summary."""

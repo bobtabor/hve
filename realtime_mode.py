@@ -148,32 +148,22 @@ class RealtimeMode:
 
                 stored_date, stored_volume = stored_data
 
-                # Check for new highest volume records (either ever or year)
+                # Check for new highest volume ever record
                 today = check_time.date()
-                ever_updated, year_updated = self.db.insert_or_update_highest_volume(symbol, today, current_volume)
+                ever_updated = self.db.insert_or_update_highest_volume(symbol, today, current_volume)
 
-                if ever_updated or year_updated:
+                if ever_updated:
                     # Get price change percentage from market snapshot
                     gain_loss_pct = self._get_price_change_percentage(symbol, current_volumes)
 
-                    # Add to hits with event type
-                    if ever_updated:
-                        logger.info(f"New highest volume EVER for {symbol}: {current_volume:,} (previous: {stored_volume:,})")
-                        hits.append((symbol, stored_date, stored_volume, current_volume, gain_loss_pct, "Ever"))
-
-                    if year_updated:
-                        # Get year record info for comparison
-                        year_record = self.db.get_highest_volume_year(symbol)
-                        if year_record:
-                            year_date, year_volume = year_record
-                            logger.info(f"New highest volume YEAR for {symbol}: {current_volume:,}")
-                            hits.append((symbol, year_date, year_volume, current_volume, gain_loss_pct, "Year"))
+                    logger.info(f"New highest volume EVER for {symbol}: {current_volume:,} (previous: {stored_volume:,})")
+                    hits.append((symbol, stored_date, stored_volume, current_volume, gain_loss_pct))
 
             # Report results
             if hits:
-                print(f"🎯 Found {len(hits)} new highest volume records!")
-                for symbol, _, prev_vol, curr_vol, _, event_type in hits:
-                    print(f"   📈 {symbol} ({event_type}): {curr_vol:,} (previous: {prev_vol:,})")
+                print(f"🎯 Found {len(hits)} new highest volume ever records!")
+                for symbol, _, prev_vol, curr_vol, _ in hits:
+                    print(f"   📈 {symbol}: {curr_vol:,} (previous: {prev_vol:,})")
 
                 # Send email notification
                 self.email.send_realtime_notification(hits, check_time)
